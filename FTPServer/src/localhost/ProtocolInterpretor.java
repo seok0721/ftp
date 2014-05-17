@@ -41,14 +41,14 @@ public class ProtocolInterpretor implements Runnable {
 		while(true) {
 			try {
 				Socket client = server.accept();
-				handleClient(client);
+				handleClientSocket(client);
 			} catch (InterruptedException | IOException e) {
 				e.printStackTrace();
 			}
 		}
 	}
 
-	private void handleClient(final Socket client) throws InterruptedException, IOException {
+	private void handleClientSocket(final Socket client) throws InterruptedException, IOException {
 		Thread thread = new Thread(new Runnable() {
 			Environment env = new Environment();
 
