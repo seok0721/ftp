@@ -14,11 +14,28 @@ public class Environment {
 	}
 
 	public void setWorkingDirectory(String path) throws IllegalAccessException, IOException {
-    String[] split = path.split("/");
+		String[] split = path.split("/");
 
 		if(path.charAt(0) == '/') {
 			workingDirectory = path;
 			return;
+		}
+
+		StringBuffer buffer = new StringBuffer();
+
+		if("..".equals(path.substring(0, 2))) {
+			String[] pathArray = path.split("/");
+
+			for(int i = 0; i < pathArray.length; i++) {
+				if(i < pathArray.length - 1) {
+					buffer.append("/").append(pathArray[i]);
+				}
+			}
+			buffer.append(path.substring(2, path.length()));
+		} else if (path.charAt(0) == '.') {
+
+		} else {
+			
 		}
 
 		File file = new File(String.format("%s/%s", workingDirectory, path));

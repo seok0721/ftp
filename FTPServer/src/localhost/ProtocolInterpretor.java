@@ -237,7 +237,7 @@ public class ProtocolInterpretor implements Runnable {
 					}
 
 					debug.append(" \r\n");
-					writer.append(" \r\n");
+					writer.append(" \n");
 
 					System.out.print(debug.toString());
 					writer.flush();
