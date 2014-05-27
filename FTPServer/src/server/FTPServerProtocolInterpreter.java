@@ -2,41 +2,39 @@ package server;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Arrays;
 
 public class FTPServerProtocolInterpreter implements Runnable {
 
-	private static ServerSocket server;
-	private int port;
-	private FTPEnvironment env = new FTPEnvironment();
-	private FTPServerDataTransferProcess serverDTP;
-
-	public FTPServerProtocolInterpreter() {
-		port = FTPConfiguration.getPort();
-	}
+	private ServerSocket server;
 
 	@Override
 	public void run() {
-		System.out.println("Create FTP Server Protocol Interpretor...");
+		Logger.out("Trying to create FTP server protocol interpretor...");
 
 		try {
-			server = new ServerSocket(port);
-		} catch(IOException e) {
-			System.err.println("Failure to create server socket.");
+			server = new ServerSocket(FTPConfiguration.getPort());
+			server.setReuseAddress(true);
+
+			Logger.out("Success to create FTP server protocol interpretor.");
+		} catch(Exception e) {
+			Logger.err("Failure to create FTP server protocol interpretor.");
+
 			System.exit(1);
 		}
 
 		while(true) {
-			CommandSocket client = null;
-
+			ClientSocket client = null;
 			try {
-				client = new CommandSocket(server.accept());
+				client = new ClientSocket(server.accept());
 
-				System.out.println(String.format("New client connect success: %s, %d",
+				Logger.out(String.format("Success to accept new client. %s:%d",
 						client.getSocket().getInetAddress().toString(),
 						client.getSocket().getPort()));
 
@@ -44,30 +42,26 @@ public class FTPServerProtocolInterpreter implements Runnable {
 				thread.start();
 				thread.join();
 			} catch(IOException e) {
-				System.err.println("New client connect failure: " + e.getMessage());
+				Logger.err("Failure to accept new client.");
 			} catch(InterruptedException e) {
-				System.err.println("Client thread is interrupted: " + e.getMessage());
+				Logger.err(String.format("Client thread is interrupted. %s:%d",
+						client.getSocket().getInetAddress().toString(),
+						client.getSocket().getPort()));
 			}
-
 		}
 	}
 
-	public FTPServerDataTransferProcess getServerDTP() {
-		return serverDTP;
-	}
+	public class ClientSocket implements Runnable {
 
-	public void setServerDTP(FTPServerDataTransferProcess serverDTP) {
-		this.serverDTP = serverDTP;
-	}
-
-	public class CommandSocket implements Runnable {
-
+		private FTPServerDataTransferProcess serverDTP;
+		private FTPEnvironment env = new FTPEnvironment();
+		private String renameFile;
 		private Socket socket;
 		private FTPCommand ftpCommand;
 		private BufferedReader reader;
 		private BufferedWriter writer;
 
-		public CommandSocket(Socket socket) {
+		public ClientSocket(Socket socket) {
 			if(socket == null) {
 				throw new NullPointerException();
 			}
@@ -146,15 +140,41 @@ public class FTPServerProtocolInterpreter implements Runnable {
 						break;
 
 					case CHANGE_WORKING_DIRECTORY:
-						env.setWorkingDirectory(ftpCommand.getArgument());
-						sendCode(250, env.getWorkingDirectory());
+						try {
+							env.setWorkingDirectory(ftpCommand.getArgument());
+							sendCode(250, env.getWorkingDirectory());
+						} catch(Exception e) {
+							sendCode(550, e.getMessage());
+						}
+
 						break;
 
-					case NAME_LIST:
-						sendCode(150, "Name List.");
-						serverDTP.execute(ftpCommand);
-						serverDTP.close();
-						sendCode(226, "Name List");
+					case RENAME_FROM:
+						renameFile = ftpCommand.getArgument();
+						sendCode(350, "Rename from: " + renameFile);
+						break;
+
+					case RENAME_TO:
+						File sourceFile = new File(String.format("%s/%s", env.getWorkingDirectory(), renameFile));
+						File targetFile = new File(String.format("%s/%s", env.getWorkingDirectory(), ftpCommand.getArgument()));
+
+						sourceFile.renameTo(targetFile);
+
+						sendCode(250, "Rename to: " + targetFile.getName());
+						break;
+
+					case STORE:
+						sendCode(125, null);
+
+						try {
+							serverDTP.store(ftpCommand);
+							sendCode(226, null);
+						} catch(Exception e1) {
+							sendCode(550, e1.getMessage());
+						} finally {
+							serverDTP.close();
+						}
+
 						break;
 
 					case LIST:
@@ -164,9 +184,36 @@ public class FTPServerProtocolInterpreter implements Runnable {
 						sendCode(226, "List");
 						break;
 
+					case NAME_LIST:
+						sendCode(150, "Name List.");
+						serverDTP.execute(ftpCommand);
+						serverDTP.close();
+						sendCode(226, "Name List");
+						break;
+
 					case REPRESENTATION_TYPE:
-						// TODO mode change
-						sendCode(200, "Transfer Mode.");
+						changeRepresentationType();
+						break;
+
+					case RETRIEVE:
+						try {
+							serverDTP.assertFile(ftpCommand);
+							sendCode(125, "File transfer start.");
+						} catch(Exception e) {
+							sendCode(550, e.getMessage());
+							serverDTP.close();
+							break;
+						}
+
+						try {
+							serverDTP.retrieve(ftpCommand);
+							sendCode(226, "File transfer success.");
+						} catch(Exception e) {
+							sendCode(550, e.getMessage());
+						} finally {
+							serverDTP.close();
+						}
+
 						break;
 
 					default:
@@ -182,6 +229,26 @@ public class FTPServerProtocolInterpreter implements Runnable {
 			}
 
 			System.out.println("Close client socket.");
+		}
+
+		private void changeRepresentationType() {
+			switch(ftpCommand.getArgument()) {
+			case "A":
+				env.setFtpDataType(FTPDataType.ASCII);
+				sendCode(200, "Transfer mode : Ascii");
+				break;
+			case "I":
+				env.setFtpDataType(FTPDataType.IMAGE);
+				sendCode(200, "Transfer mode : Binary");
+				break;
+			case "E":
+				env.setFtpDataType(FTPDataType.EBCDIC);
+				sendCode(200, "Transfer mode : Ebcdic");
+				break;
+			default:
+				sendCode(500, "Unknown transfer mode.");
+				break;
+			}
 		}
 
 		private void sendCode(int code, String description) {
@@ -327,16 +394,29 @@ public class FTPServerProtocolInterpreter implements Runnable {
 				break;
 			default:
 				ftpCommand = null;
-				break;
+				System.out.println("Receive unknown command.");
+				return;
 			}
 
 			if(pair.length == 1) {
+				ftpCommand.setArgument(null);
 				System.out.println("Command: " + pair[0]);
-			} else {
-				ftpCommand.setArgument(pair[1]);
-
-				System.out.println("Command: " + pair[0] + ", Arguments: " + pair[1]);
+				return;
 			}
+
+			if(pair.length == 2) {
+				ftpCommand.setArgument(pair[1]);
+			} else {
+				StringBuffer buffer = new StringBuffer();
+				for(String arg : Arrays.copyOfRange(pair, 1, pair.length - 1)) {
+					buffer.append(arg).append(" ");
+				}
+				buffer.append(pair[pair.length - 1]);
+
+				ftpCommand.setArgument(buffer.toString());
+			}
+
+			System.out.println("Command: " + pair[0] + ", Arguments: " + ftpCommand.getArgument());
 		}
 	}
 }

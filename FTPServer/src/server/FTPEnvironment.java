@@ -1,34 +1,52 @@
 package server;
 
+import java.io.File;
 import java.util.Iterator;
 import java.util.Stack;
 
 public class FTPEnvironment {
 
-	private Stack<String> stack = new Stack<String>();
+	private Stack<String> workingDirectory = new Stack<String>();
+	private FTPDataType ftpDataType = FTPDataType.ASCII;
 
 	public String getWorkingDirectory() {
-		if(stack.size() == 0) {
+		if(workingDirectory.size() == 0) {
 			return "/";
 		}
 
 		StringBuffer buffer = new StringBuffer();
 
-		for(Iterator<String> iter = stack.iterator(); iter.hasNext();) {
+		for(Iterator<String> iter = workingDirectory.iterator(); iter.hasNext();) {
 			buffer.append("/").append(iter.next());
 		}
 
 		return buffer.toString();
 	}
 
-	public void setWorkingDirectory(String path) {
+	public void setWorkingDirectory(String path) throws Exception {
+		File directory = null;
+
+		if(path.charAt(0) == '/') {
+			directory = new File(path);
+		} else {
+			directory = new File(String.format("%s/%s", getWorkingDirectory(), path));
+		}
+
+		if(!directory.exists()) {
+			throw new Exception("Directory not exists.");
+		}
+
+		if(!directory.isDirectory()) {
+			throw new Exception("Paht is not directory.");
+		}
+
 		String[] pathArray = path.split("/");
 
 		if(pathArray.length == 0 || pathArray[0].length() == 0) {
-			stack.clear();
+			workingDirectory.clear();
 
 			for(int i = 1; i < pathArray.length; i++) {
-				stack.push(pathArray[i]);
+				workingDirectory.push(pathArray[i]);
 			}
 
 			return;
@@ -39,12 +57,20 @@ public class FTPEnvironment {
 			case ".":
 				continue;
 			case "..":
-				stack.pop();
+				workingDirectory.pop();
 				break;
 			default:
-				stack.push(pathArray[i]);
+				workingDirectory.push(pathArray[i]);
 				break;
 			}
 		}
+	}
+
+	public FTPDataType getFtpDataType() {
+		return ftpDataType;
+	}
+
+	public void setFtpDataType(FTPDataType ftpDataType) {
+		this.ftpDataType = ftpDataType;
 	}
 }
