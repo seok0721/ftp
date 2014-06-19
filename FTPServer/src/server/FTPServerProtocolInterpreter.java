@@ -14,6 +14,22 @@ public class FTPServerProtocolInterpreter implements Runnable {
 
 	private ServerSocket server;
 
+	public String getAddress() {
+		if(server == null) {
+			return null;
+		}
+
+		return server.getInetAddress().getHostAddress();
+	}
+
+	public Integer getPort() {
+		if(server == null) {
+			return null;
+		}
+
+		return server.getLocalPort();
+	}
+
 	@Override
 	public void run() {
 		Logger.out("Trying to create FTP server protocol interpretor...");
